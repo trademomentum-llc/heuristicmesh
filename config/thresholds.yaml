@@ -1,0 +1,14 @@
+thermal:
+  human_temp_c: 27.5
+  hot_pixel_min: 3
+  velocity_trigger: 1.8
+  persistence_frames: 4
+  frame_interval_ms: 50
+
+serial:
+  baud: 115200
+  magic: 0xA5
+
+jetson:
+  ring_buffer_seconds: 15
+  event_log: thermal_events.jsonl
