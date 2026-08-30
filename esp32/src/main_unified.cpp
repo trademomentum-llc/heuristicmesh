@@ -2,14 +2,13 @@
  * HeuristicMesh Unified ESP32 Firmware
  * 
  * Supports: ESP32-S3, ESP32-S2-WROOM
- * Sensors: AMG8833 (primary), MLX90640 (optional)
- * Transport: USB Serial (primary), UART → USR-TCP232 → ModBus/TCP (optional)
- * Protocol: Unified Binary Protocol v1.0 (see PROTOCOL_SPECIFICATION.md)
+ * Sensors: AMG8833 ONLY (2x sensors in inventory)
+ * Transport: USB Serial (primary), UART -> USR-TCP232 -> ModBus/TCP (optional)
+ * Protocol: Unified Binary Protocol v1.1 (see PROTOCOL_SPECIFICATION.md)
  * 
  * Features:
- * - Dual thermal sensor support (AMG8833 + MLX90640)
+ * - AMG8833 thermal sensor support (8x8 arrays)
  * - Fall detection with transparent heuristics
- * - Burst capture mode for high-resolution frames
  * - ModBus/TCP support via USR-TCP232
  * - MQTT support (future)
  * - Configuration via serial commands
@@ -18,8 +17,7 @@
  * 
  * Hardware Requirements:
  * - ESP32-S3 or ESP32-S2
- * - AMG8833 (8x8 thermal array)
- * - Optional: MLX90640 (32x24 thermal array)
+ * - AMG8833 (8x8 thermal array) - 2 sensors max
  * - Optional: USR-TCP232 for Serial-to-Ethernet
  * 
  * Pin Configuration (ESP32-S3):
@@ -30,8 +28,9 @@
  * - Status LED: GPIO 2
  * 
  * Author: HeuristicMesh Engineering Team
- * Version: 1.0
+ * Version: 1.1
  * Date: 2026-08-29
+ * Note: MLX90640 support removed - only 2x AMG8833 sensors in inventory
  */
 
 #include <Arduino.h>
@@ -49,8 +48,8 @@
 #define STATUS_LED         2
 
 // Sensor configuration
-#define AMG_I2C_ADDR       0x69  // Default AMG8833 address (AD0=HIGH)
-#define MLX_I2C_ADDR       0x33  // Default MLX90640 address
+#define AMG_I2C_ADDR_DEFAULT 0x69  // Default AMG8833 address (AD0=HIGH)
+#define AMG_I2C_ADDR_ALT     0x68  // Alternate AMG8833 address (AD0=LOW)
 
 // Serial configuration
 #define SERIAL_BAUD        115200  // For USR-TCP232
@@ -63,8 +62,6 @@
 // Timing configuration
 #define AMG_POLL_MS        50    // ~20Hz polling for AMG8833
 #define STATUS_INTERVAL_MS  1000  // Heartbeat interval
-#define BURST_FRAMES       24    // MLX90640 burst capture count
-#define BURST_RATE_HZ      8     // MLX90640 refresh rate during burst
 
 // Thermal thresholds (tunable)
 #define HUMAN_TEMP_THRESHOLD  27.5f
@@ -83,10 +80,7 @@
 // ============================================================================
 
 #include <Adafruit_AMG88xx.h>
-// Note: For MLX90640, use either Adafruit or SparkFun library
-// Uncomment the one you're using:
-// #include <Adafruit_MLX90640.h>
-#include <SparkFun_MLX90640.h>
+// MLX90640 support removed - only 2x AMG8833 in inventory
 
 // ============================================================================
 // PROTOCOL DEFINITIONS (from PROTOCOL_SPECIFICATION.md)
@@ -96,23 +90,17 @@
 #define MSG_HELLO           0x01
 #define MSG_HEARTBEAT       0x02
 #define MSG_AMG_FRAME       0x03
-#define MSG_MLX_FRAME       0x04
-#define MSG_BURST_START     0x05
-#define MSG_BURST_FRAME     0x06
-#define MSG_BURST_END       0x07
-#define MSG_FALL_CANDIDATE   0x08
-#define MSG_CONFIG_REQUEST  0x09
-#define MSG_CONFIG_RESPONSE 0x0A
-#define MSG_ERROR           0x0B
-#define MSG_ACK             0x0C
-#define MSG_NACK            0x0D
-#define MSG_MODBUS_WRAPPER  0x80
+#define MSG_FALL_CANDIDATE   0x04
+#define MSG_CONFIG_REQUEST  0x05
+#define MSG_CONFIG_RESPONSE 0x06
+#define MSG_ERROR           0x07
+#define MSG_ACK             0x08
+#define MSG_NACK            0x09
+#define MSG_MODBUS_WRAPPER  0x0A
 
 // Sensor type codes
 #define SENSOR_NONE         0x00
 #define SENSOR_AMG8833      0x01
-#define SENSOR_MLX90640     0x02
-#define SENSOR_DUAL         0x03
 
 // Device type codes
 #define DEVICE_ESP32_S3     0x01
@@ -159,34 +147,6 @@ struct AMGFramePayload {
     float pixels[64];  // 8x8 temperature values
 };
 
-// MLX90640 frame payload
-struct MLXFramePayload {
-    uint64_t timestamp_us;
-    uint32_t frame_id;
-    uint8_t  flags;
-    uint8_t  reserved[3];
-    float max_temp;
-    float avg_temp;
-    float min_temp;
-    float pixels[768];  // 32x24 temperature values
-};
-
-// Burst start payload
-struct BurstStartPayload {
-    uint64_t burst_id;
-    uint8_t  sensor_type;
-    uint8_t  frame_rate;
-    uint16_t frame_count;
-    uint32_t trigger_reason;
-};
-
-// Burst frame header (additional for burst messages)
-struct BurstFrameHeader {
-    uint64_t burst_id;
-    uint16_t frame_index;
-    uint16_t total_frames;
-};
-
 // Fall candidate payload
 struct FallCandidatePayload {
     uint64_t timestamp_us;
@@ -215,7 +175,6 @@ struct ErrorPayload {
 
 // Sensor instances
 Adafruit_AMG88xx amg;
-SparkFun_MLX90640 mlx;
 
 // HardwareSerial for USR-TCP232
 HardwareSerial SerialUSR(1);  // UART 1 for ESP32-S3
@@ -223,9 +182,7 @@ HardwareSerial SerialUSR(1);  // UART 1 for ESP32-S3
 // State tracking
 enum SystemState { 
     STATE_INITIALIZING, 
-    STATE_IDLE, 
-    STATE_BURST_CAPTURE, 
-    STATE_BURST_STREAMING,
+    STATE_IDLE,
     STATE_ERROR 
 };
 SystemState systemState = STATE_INITIALIZING;
@@ -238,8 +195,6 @@ uint8_t capabilities = 0;
 
 // Sensor state
 bool amgAvailable = false;
-bool mlxAvailable = false;
-bool useMLX = false;  // Set to true if MLX90640 is connected
 
 // Centroid tracking
 Centroid centroidHistory[CENTROID_HISTORY];
@@ -252,15 +207,7 @@ float prevCentroidY = 3.5f;  // Center of 0-7 range
 
 // Frame counters
 uint32_t amgFrameCounter = 0;
-uint32_t mlxFrameCounter = 0;
-uint32_t burstCounter = 0;
 uint32_t sequenceCounter = 0;
-
-// Burst capture state
-uint64_t currentBurstId = 0;
-uint16_t currentBurstFrame = 0;
-uint16_t totalBurstFrames = BURST_FRAMES;
-bool burstReady = false;
 
 // Timing
 unsigned long lastAmgPoll = 0;
@@ -269,8 +216,6 @@ unsigned long lastStatusLed = 0;
 
 // Buffers
 float amgPixels[64];
-float mlxPixels[768];
-float burstBuffer[BURST_FRAMES][768];
 
 // ModBus state
 bool modbusEnabled = MODBUS_ENABLED;
@@ -301,10 +246,6 @@ void sendMessage(uint8_t messageType, const void* payload, uint16_t payloadLen, 
     if (payload != nullptr && payloadLen > 0) {
         stream->write((const uint8_t*)payload, payloadLen);
     }
-    
-    // Optional: Add CRC-16 at the end
-    // uint16_t crc = calculateCRC16(...);
-    // stream->write((uint8_t*)&crc, 2);
 }
 
 /**
@@ -321,7 +262,7 @@ void sendHello(Stream* stream = &Serial) {
     
     payload.device_type = deviceType;
     payload.fw_version[0] = 1;
-    payload.fw_version[1] = 0;
+    payload.fw_version[1] = 1;  // Version 1.1 - AMG8833 only
     payload.fw_version[2] = 0;
     payload.fw_version[3] = 0;
     payload.sensor_count = 0;
@@ -330,12 +271,7 @@ void sendHello(Stream* stream = &Serial) {
         payload.sensor_types[payload.sensor_count++] = SENSOR_AMG8833;
         capabilities |= 0x0001;  // Supports AMG8833
     }
-    if (mlxAvailable) {
-        payload.sensor_types[payload.sensor_count++] = SENSOR_MLX90640;
-        capabilities |= 0x0002;  // Supports MLX90640
-    }
     
-    capabilities |= 0x0004;  // Supports burst mode
     if (modbusEnabled) {
         capabilities |= 0x0008;  // Supports ModBus/TCP
     }
@@ -361,7 +297,6 @@ void sendHeartbeat(Stream* stream = &Serial) {
     payload.sensor_status = 0;
     
     if (amgAvailable) payload.sensor_status |= 0x01;
-    if (mlxAvailable) payload.sensor_status |= 0x02;
     if (fallCandidateFlag) payload.sensor_status |= 0x04;
     
     payload.error_count = 0;  // TODO: Track actual error count
@@ -374,68 +309,6 @@ void sendHeartbeat(Stream* stream = &Serial) {
  */
 void sendAMGFrame(AMGFramePayload* frame, Stream* stream = &Serial) {
     sendMessage(MSG_AMG_FRAME, frame, sizeof(AMGFramePayload), stream);
-}
-
-/**
- * Send MLX_FRAME message
- */
-void sendMLXFrame(MLXFramePayload* frame, Stream* stream = &Serial) {
-    sendMessage(MSG_MLX_FRAME, frame, sizeof(MLXFramePayload), stream);
-}
-
-/**
- * Send BURST_START message
- */
-void sendBurstStart(uint64_t burstId, uint8_t sensorType, uint16_t frameCount, Stream* stream = &Serial) {
-    BurstStartPayload payload;
-    payload.burst_id = burstId;
-    payload.sensor_type = sensorType;
-    payload.frame_rate = BURST_RATE_HZ;
-    payload.frame_count = frameCount;
-    payload.trigger_reason = 0x0001;  // Fall candidate from AMG8833
-    
-    sendMessage(MSG_BURST_START, &payload, sizeof(BurstStartPayload), stream);
-}
-
-/**
- * Send BURST_FRAME message
- */
-void sendBurstFrame(uint64_t burstId, uint16_t frameIndex, uint16_t totalFrames, 
-                   void* frameData, uint16_t frameDataLen, Stream* stream = &Serial) {
-    // For burst frames, we send burst header + frame data
-    // This is a simplified approach - full spec includes separate header
-    
-    // Create combined payload
-    struct {
-        BurstFrameHeader header;
-        uint8_t data[frameDataLen];
-    } payload;
-    
-    payload.header.burst_id = burstId;
-    payload.header.frame_index = frameIndex;
-    payload.header.total_frames = totalFrames;
-    memcpy(payload.data, frameData, frameDataLen);
-    
-    sendMessage(MSG_BURST_FRAME, &payload, sizeof(BurstFrameHeader) + frameDataLen, stream);
-}
-
-/**
- * Send BURST_END message
- */
-void sendBurstEnd(uint64_t burstId, uint16_t framesCaptured, uint8_t status, Stream* stream = &Serial) {
-    struct {
-        uint64_t burst_id;
-        uint16_t frames_captured;
-        uint8_t status;
-        uint8_t reserved;
-    } payload;
-    
-    payload.burst_id = burstId;
-    payload.frames_captured = framesCaptured;
-    payload.status = status;
-    payload.reserved = 0;
-    
-    sendMessage(MSG_BURST_END, &payload, sizeof(payload), stream);
 }
 
 /**
@@ -467,38 +340,11 @@ void sendError(uint8_t errorCode, const char* message, Stream* stream = &Serial)
  * Initialize AMG8833 sensor
  */
 bool initAMG8833() {
-    if (!amg.begin(AMG_I2C_ADDR)) {
+    if (!amg.begin(AMG_I2C_ADDR_DEFAULT)) {
         sendError(0x02, "AMG8833 not found");
         return false;
     }
     amgAvailable = true;
-    return true;
-}
-
-/**
- * Initialize MLX90640 sensor
- */
-bool initMLX90640() {
-    if (mlx.begin(MLX_I2C_ADDR) != 0) {
-        sendError(0x02, "MLX90640 not found");
-        return false;
-    }
-    
-    // Initialize with default parameters
-    mlx.setMode(MLX90640_CHESS);
-    mlx.setResolution(MLX90640_ADC_18BIT);
-    mlx.setRefreshRate(MLX90640_1_HZ);  // Start in standby mode
-    
-    // Get EEPROM parameters
-    int paramError = mlx.getParameters();
-    if (paramError != 0) {
-        char msg[32];
-        snprintf(msg, sizeof(msg), "MLX90640 EEPROM error: %d", paramError);
-        sendError(0x02, msg);
-        return false;
-    }
-    
-    mlxAvailable = true;
     return true;
 }
 
@@ -512,12 +358,9 @@ void scanI2C() {
         if (Wire.endTransmission() == 0) {
             Serial.printf("[SYS] Found device at 0x%02X\n", addr);
             
-            if (addr == AMG_I2C_ADDR) {
+            if (addr == AMG_I2C_ADDR_DEFAULT || addr == AMG_I2C_ADDR_ALT) {
                 Serial.println("[SYS] AMG8833 detected");
                 amgAvailable = true;
-            } else if (addr == MLX_I2C_ADDR) {
-                Serial.println("[SYS] MLX90640 detected");
-                mlxAvailable = true;
             }
         }
     }
@@ -612,130 +455,6 @@ bool checkFallTrigger(const Centroid* centroid, float velocity, int hotCount) {
     return false;
 }
 
-/**
- * Read MLX90640 frame
- */
-bool readMLX90640(float* pixels) {
-    if (!mlxAvailable) return false;
-    
-    if (mlx.isFrameReady()) {
-        int error = mlx.getFrame(pixels);
-        if (error != 0) {
-            char msg[32];
-            snprintf(msg, sizeof(msg), "MLX90640 read error: %d", error);
-            sendError(0x03, msg);
-            return false;
-        }
-        return true;
-    }
-    return false;
-}
-
-/**
- * Start burst capture on MLX90640
- */
-void startBurstCapture() {
-    if (!mlxAvailable) return;
-    
-    Serial.println("[BURST] Starting MLX90640 burst capture");
-    
-    // Switch to high refresh rate
-    mlx.setRefreshRate(MLX90640_8_HZ);
-    
-    currentBurstId = millis();  // Use timestamp as burst ID
-    currentBurstFrame = 0;
-    burstReady = false;
-    systemState = STATE_BURST_CAPTURE;
-    
-    // Send burst start message
-    sendBurstStart(currentBurstId, SENSOR_MLX90640, BURST_FRAMES);
-}
-
-/**
- * Capture burst frame
- */
-void captureBurstFrame() {
-    if (systemState != STATE_BURST_CAPTURE) return;
-    
-    if (readMLX90640(mlxPixels)) {
-        // Store frame in buffer
-        memcpy(burstBuffer[currentBurstFrame], mlxPixels, sizeof(float) * 768);
-        currentBurstFrame++;
-        
-        // Send individual burst frame
-        MLXFramePayload frame;
-        frame.timestamp_us = esp_timer_get_time();
-        frame.frame_id = mlxFrameCounter++;
-        frame.flags = 0;
-        
-        // Compute stats
-        float maxT = -100, minT = 100, sum = 0;
-        for (int i = 0; i < 768; i++) {
-            if (mlxPixels[i] > maxT) maxT = mlxPixels[i];
-            if (mlxPixels[i] < minT) minT = mlxPixels[i];
-            sum += mlxPixels[i];
-        }
-        frame.max_temp = maxT;
-        frame.avg_temp = sum / 768.0f;
-        frame.min_temp = minT;
-        memcpy(frame.pixels, mlxPixels, sizeof(float) * 768);
-        
-        // For now, send as regular MLX frame
-        // In full implementation, use burst protocol
-        sendMLXFrame(&frame);
-        
-        if (currentBurstFrame >= totalBurstFrames) {
-            // Burst complete
-            systemState = STATE_BURST_STREAMING;
-            burstReady = true;
-            
-            // Return to standby
-            mlx.setRefreshRate(MLX90640_1_HZ);
-            
-            sendBurstEnd(currentBurstId, currentBurstFrame, 0x00);
-            Serial.printf("[BURST] Capture complete: %d frames\n", currentBurstFrame);
-        }
-    }
-}
-
-/**
- * Stream burst frames
- */
-void streamBurstFrames() {
-    if (!burstReady) return;
-    
-    static uint16_t streamIndex = 0;
-    
-    if (streamIndex < currentBurstFrame) {
-        // Send burst frame
-        MLXFramePayload frame;
-        frame.timestamp_us = esp_timer_get_time();
-        frame.frame_id = mlxFrameCounter++;
-        frame.flags = 0;
-        
-        // Compute stats for this frame
-        float maxT = -100, minT = 100, sum = 0;
-        for (int i = 0; i < 768; i++) {
-            if (burstBuffer[streamIndex][i] > maxT) maxT = burstBuffer[streamIndex][i];
-            if (burstBuffer[streamIndex][i] < minT) minT = burstBuffer[streamIndex][i];
-            sum += burstBuffer[streamIndex][i];
-        }
-        frame.max_temp = maxT;
-        frame.avg_temp = sum / 768.0f;
-        frame.min_temp = minT;
-        memcpy(frame.pixels, burstBuffer[streamIndex], sizeof(float) * 768);
-        
-        sendMLXFrame(&frame);
-        streamIndex++;
-    } else {
-        // All frames sent
-        streamIndex = 0;
-        burstReady = false;
-        systemState = STATE_IDLE;
-        Serial.println("[BURST] Streaming complete");
-    }
-}
-
 // ============================================================================
 // MODBUS/TCP FUNCTIONS
 // ============================================================================
@@ -818,8 +537,9 @@ void setup() {
     }
     
     Serial.println("\n=== HeuristicMesh Unified Firmware ===");
-    Serial.println("Version: 1.0");
+    Serial.println("Version: 1.1");
     Serial.println("Date: 2026-08-29");
+    Serial.println("Note: AMG8833 ONLY - No MLX90640 support");
     
     // Determine device type
     #if defined(CONFIG_IDF_TARGET_ESP32S3)
@@ -844,20 +564,13 @@ void setup() {
     
     // Initialize sensors
     amgAvailable = initAMG8833();
-    mlxAvailable = initMLX90640();
     
-    if (amgAvailable && mlxAvailable) {
-        sensorType = SENSOR_DUAL;
-        Serial.println("[SYS] Dual sensor mode (AMG8833 + MLX90640)");
-    } else if (amgAvailable) {
+    if (amgAvailable) {
         sensorType = SENSOR_AMG8833;
-        Serial.println("[SYS] Single sensor mode (AMG8833)");
-    } else if (mlxAvailable) {
-        sensorType = SENSOR_MLX90640;
-        Serial.println("[SYS] Single sensor mode (MLX90640)");
+        Serial.println("[SYS] AMG8833 sensor mode");
     } else {
         sensorType = SENSOR_NONE;
-        Serial.println("[SYS] WARNING: No sensors detected!");
+        Serial.println("[SYS] WARNING: No AMG8833 detected!");
         systemState = STATE_ERROR;
     }
     
@@ -948,11 +661,6 @@ void loop() {
                         // New fall candidate
                         fallCandidateFlag = true;
                         
-                        // If MLX90640 is available, start burst capture
-                        if (mlxAvailable) {
-                            startBurstCapture();
-                        }
-                        
                         // Send fall candidate message
                         FallCandidatePayload candidate;
                         candidate.timestamp_us = esp_timer_get_time();
@@ -997,46 +705,9 @@ void loop() {
                     }
                 }
             }
-            
-            // If MLX90640 is primary sensor (no AMG8833), poll it
-            if (!amgAvailable && mlxAvailable && now - lastAmgPoll >= 1000) {
-                lastAmgPoll = now;
-                if (readMLX90640(mlxPixels)) {
-                    MLXFramePayload frame;
-                    frame.timestamp_us = esp_timer_get_time();
-                    frame.frame_id = mlxFrameCounter++;
-                    frame.flags = 0;
-                    
-                    float maxT = -100, minT = 100, sum = 0;
-                    for (int i = 0; i < 768; i++) {
-                        if (mlxPixels[i] > maxT) maxT = mlxPixels[i];
-                        if (mlxPixels[i] < minT) minT = mlxPixels[i];
-                        sum += mlxPixels[i];
-                    }
-                    frame.max_temp = maxT;
-                    frame.avg_temp = sum / 768.0f;
-                    frame.min_temp = minT;
-                    memcpy(frame.pixels, mlxPixels, sizeof(float) * 768);
-                    
-                    sendMLXFrame(&frame, &Serial);
-                    if (modbusEnabled) {
-                        sendMLXFrame(&frame, &SerialUSR);
-                    }
-                }
-            }
             break;
         }
         
-        case STATE_BURST_CAPTURE:
-            // Capture MLX90640 frames at high rate
-            captureBurstFrame();
-            break;
-            
-        case STATE_BURST_STREAMING:
-            // Stream captured frames
-            streamBurstFrames();
-            break;
-            
         case STATE_ERROR:
             // Error state - blink LED rapidly
             if (now - lastStatusLed >= 500) {

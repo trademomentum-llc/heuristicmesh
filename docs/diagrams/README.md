@@ -136,7 +136,7 @@ This directory contains **photorealistic diagram definitions** for the Heuristic
 
 **Shows:** How data moves through the system
 - AMG8833 continuous polling → ESP32
-- Fall candidate detection → MLX90640 burst capture
+- Fall candidate detection →   capture
 - USB serial → Jetson ingest
 - Framework 1 → Framework 2 → Framework 3 → Framework 4
 - Provenance logging
@@ -221,8 +221,8 @@ In PlantUML, change the style definitions:
 ### Add Components
 Edit the diagram definitions to add new hardware:
 ```plantuml
-component "MLX90640" as MLX <<sensor>>
-ESP32 --> MLX : "I2C 0x33"
+component "" as  <<sensor>>
+ESP32 -->  : "I2C 0x33"
 ```
 
 ### Change Layout

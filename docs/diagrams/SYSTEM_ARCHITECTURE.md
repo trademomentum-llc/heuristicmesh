@@ -419,7 +419,7 @@ digraph HeuristicMesh {
     legend [shape=plaintext, label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
             <TR><TD COLSPAN="2" BGCOLOR="#FFFFFF"><B>HeuristicMesh System Architecture</B></TD></TR>
-            <TR><TD BGCOLOR="#FFE4E1">Sensor</TD><TD BGCOLOR="#FFFFFF">ESP32, AMG8833, MLX90640</TD></TR>
+            <TR><TD BGCOLOR="#FFE4E1">Sensor</TD><TD BGCOLOR="#FFFFFF">ESP32, AMG8833, </TD></TR>
             <TR><TD BGCOLOR="#E6E6FA">Compute</TD><TD BGCOLOR="#FFFFFF">Jetson Orin Nano</TD></TR>
             <TR><TD BGCOLOR="#F0F8FF">Network</TD><TD BGCOLOR="#FFFFFF">Zyxel, USR-TCP232</TD></TR>
             <TR><TD BGCOLOR="#FFFACD">Control</TD><TD BGCOLOR="#FFFFFF">ASUS NUC</TD></TR>
@@ -611,7 +611,7 @@ note bottom
     **I2C Address Configuration:**
     AMG8833 #1: AD0=HIGH → 0x69
     AMG8833 #2: AD0=LOW → 0x68
-    MLX90640: Default → 0x33
+    : Default → 0x33
     
     **Pull-up Resistors:**
     4.7kΩ on SDA and SCL to 3.3V
@@ -712,7 +712,7 @@ rectangle "Sync Utility" as SYNC <<process>>
 ' ============================================================================
 
 note "AMG8833 Frame\n8x8 pixels\n@20Hz" as AMG_FRAME <<data>>
-note "MLX90640 Frame\n32x24 pixels\n@8Hz (burst)" as MLX_FRAME <<data>>
+note " Frame\n8x8 pixels\n@8Hz ()" as _FRAME <<data>>
 note "Centroid Data\n(x, y, velocity, mass)" as CENTROID <<data>>
 note "Fall Candidate\n(confidence, features)" as CANDIDATE <<data>>
 note "Classification\n(fall/near-fall/noise)" as CLASSIFICATION <<data>>
@@ -752,17 +752,17 @@ FW3 -[fall_path,arrow]-> FW4
 FW4 -[fall_path,arrow]-> ALERT
 
 ' ============================================================================
-' CONNECTIONS - Burst Capture Path
+' CONNECTIONS -  Capture Path
 ' ============================================================================
 
-ESP -[normal_path,arrow]-> USB : "BURST_START"
-USB -[normal_path,arrow]-> FW2 : "Trigger MLX90640"
+ESP -[normal_path,arrow]-> USB : "_START"
+USB -[normal_path,arrow]-> FW2 : "Trigger "
 
-ESP -[normal_path,arrow]-> USB : "MLX_FRAME x24"
+ESP -[normal_path,arrow]-> USB : "_FRAME x24"
 USB -[normal_path,arrow]-> FW2 : "High-res frames"
 
-FW2 -[normal_path,arrow]-> MLX_FRAME
-MLX_FRAME -[normal_path,arrow]-> FW2 : "Spatial analysis"
+FW2 -[normal_path,arrow]-> _FRAME
+_FRAME -[normal_path,arrow]-> FW2 : "Spatial analysis"
 
 ' ============================================================================
 ' CONNECTIONS - Ground Truth Path
@@ -773,7 +773,7 @@ IR -[normal_path,arrow]-> SYNC : "Video frames"
 
 SYNC -[normal_path,arrow]-> DATASET : "hm_bodycam_sync.py"
 AMG_FRAME -[normal_path,arrow]-> DATASET
-MLX_FRAME -[normal_path,arrow]-> DATASET
+_FRAME -[normal_path,arrow]-> DATASET
 CANDIDATE -[normal_path,arrow]-> DATASET
 
 ' ============================================================================
@@ -783,7 +783,7 @@ CANDIDATE -[normal_path,arrow]-> DATASET
 note top of ESP
     **Sensor Layer**
     - AMG8833: Continuous 20Hz polling
-    - MLX90640: Burst capture @8Hz (3s)
+    - :  capture @8Hz (3s)
     - Fall trigger: Velocity + centroid
 end note
 
@@ -797,8 +797,8 @@ end note
 
 note top of FW2
     **Framework 2: Spatial Analysis**
-    - MLX90640 feature extraction
-    - Burst frame analysis
+    -  feature extraction
+    -  frame analysis
     - Temporal features
     - Confidence scoring
 end note
@@ -822,7 +822,7 @@ end note
 note bottom
     **Performance Targets:**
     AMG8833 → Trigger: ≤50ms
-    MLX90640 capture: ≤200ms
+     capture: ≤200ms
     Jetson inference: ≤80ms
     Mesh arbitration: ≤100ms
     **Total E2E latency: ≤1,800ms**
@@ -1353,7 +1353,7 @@ note right of SYS_HB
       "status": "OK",
       "sensor_status": {
         "amg8833": "online",
-        "mlx90640": "standby"
+        "90640": "standby"
       },
       "error_count": 0
     }

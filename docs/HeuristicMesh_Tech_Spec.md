@@ -12,7 +12,7 @@
 
 ### 2. Sensors
 - AMG8833 (8×8, I2C 0x68 or 0x69) – continuous 10 Hz polling, anomaly trigger  
-- MLX90640 (32×24, I2C 0x33) – on-demand 4–16 Hz capture window of 3–5 s after trigger  
+-  (32×24, I2C 0x33) – on-demand 4–16 Hz capture window of 3–5 s after trigger  
 - Interconnect: ESP32-S3 (or direct Jetson I2C) acting as sensor concentrator; dual-address I2C bus with 4.7 kΩ pull-ups.
 
 ### 3. Network Fabric (Zyxel)
@@ -29,7 +29,7 @@
 
 ### 5. Performance Targets
 - AMG8833 → trigger decision: ≤ 50 ms  
-- MLX90640 frame acquisition + transfer: ≤ 200 ms  
+-  frame acquisition + transfer: ≤ 200 ms  
 - Jetson inference (single frame + temporal buffer): ≤ 80 ms (int8)  
 - Mesh arbitration + alert dispatch: ≤ 100 ms  
 - Total budget: ≤ 1 800 ms

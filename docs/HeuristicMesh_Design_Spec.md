@@ -18,7 +18,7 @@
    ┌─────────▼─────────┐           ┌─────────┴───────────┐
    │ Framework 2       │           │ Framework 3         │
    │ Spatial Analysis  │──────────►│ Event Classification│
-   │ (MLX90640 + pose) │           │ (rules + confidence)│
+   │ ( + pose) │           │ (rules + confidence)│
    └───────────────────┘           └─────────────────────┘
 
 
@@ -54,7 +54,7 @@
          │                    └──────────┬───────────┘
          │                               │
          │                    ┌──────────▼───────────┐
-         │                    │ AMG8833  +  MLX90640 │
+         │                    │ AMG8833  +   │
          │                    │ (shared I2C bus)     │
          │                    └──────────────────────┘
          │
@@ -73,7 +73,7 @@ USG Flex 100H enforces inter-VLAN ACLs; only NUC may initiate outbound alert con
 
 ### 4. Data Flow (Happy Path)
 1. AMG8833 continuous poll detects thermal anomaly → GPIO/MQTT trigger.  
-2. Sensor concentrator starts MLX90640 high-rate capture (3–5 s buffer).  
+2. Sensor concentrator starts  high-rate capture (3–5 s buffer).  
 3. Frames streamed to Jetson A (primary) via MQTT or ZeroMQ.  
 4. Jetson A runs vision encoder → pose / shape features → Framework 2 & 3.  
 5. Confidence + feature vector returned to NUC Mesh Orchestrator.  
@@ -82,7 +82,7 @@ USG Flex 100H enforces inter-VLAN ACLs; only NUC may initiate outbound alert con
 
 ### 5. Failure Modes & Degradation
 - Jetson A failure → automatic failover to Jetson B within 2 s.  
-- MLX90640 offline → system continues on AMG8833 + simplified heuristics (reduced confidence).  
+-  offline → system continues on AMG8833 + simplified heuristics (reduced confidence).  
 - Network partition → local Jetson can still raise local GPIO/audible alert; NUC reconciles on reconnection.  
 - All decisions remain fully reconstructible from local logs.
 

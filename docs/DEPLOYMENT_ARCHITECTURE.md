@@ -1,6 +1,6 @@
 # HeuristicMesh Deployment Architecture
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** 2026-08-29  
 **Status:** Active  
 **Hardware Inventory:** 3× ESP32-S3, 1× ESP32-S2-WROOM, 2× AMG8833, Arduino Uno, 3× IR Body Cams, 2× Low-Res Cameras, 1× High-Res IR Camera
@@ -10,6 +10,8 @@
 ## 🏗️ System Overview
 
 HeuristicMesh is a **privacy-preserving, thermal IR-based fall detection system** with **transparent, rule-based heuristics** (no black-box ML). This document provides the complete deployment architecture including wiring diagrams, data flow, and configuration for your specific hardware.
+
+**Note:** This deployment uses **AMG8833 sensors only** (8×8 thermal arrays). **No MLX90640 sensors are present in this configuration.** Only 2 AMG8833 sensors are available.
 
 ---
 
@@ -30,15 +32,15 @@ HeuristicMesh is a **privacy-preserving, thermal IR-based fall detection system*
 ```mermaid
 graph TD
     subgraph Sensors["Sensor Layer (VLAN 30)"]
-        ESP1["ESP32-S3 #1\nAMG8833 #1"]
-        ESP2["ESP32-S3 #2\nAMG8833 #2"]
+        ESP1["ESP32-S3 #1\nAMG8833 #1 (0x69)"]
+        ESP2["ESP32-S3 #2\nAMG8833 #2 (0x68)"]
         ESP3["ESP32-S3 #3\n(Standby)"]
         ESP_S2["ESP32-S2-WROOM\n(Gateway)"]
         ARD["Arduino Uno\n(Test/Sim)"]
     end
     
     subgraph Network["Network Layer"]
-        SW["Zyxel GS1200\nManaged Switch"]
+        XMG108["Zyxel XMG108\nCore Switch"]
         FW["Zyxel USG Flex 100H\nFirewall"]
         AP["Zyxel NWA90BE\nWiFi AP"]
         USR1["USR-TCP232-410S #1"]
@@ -68,13 +70,13 @@ graph TD
     ESP2 -->|USB| JET_A
     ESP3 -->|USB| JET_B
     ESP_S2 -->|UART| USR1
-    USR1 -->|Ethernet| SW
-    USR2 -->|Ethernet| SW
-    SW --> FW
+    USR1 -->|Ethernet| XMG108
+    USR2 -->|Ethernet| XMG108
+    XMG108 --> FW
     FW --> JET_A
     FW --> JET_B
     FW --> NUC
-    AP --> SW
+    AP --> XMG108
     
     JET_A -->|gRPC| NUC
     JET_B -->|gRPC| NUC
@@ -87,27 +89,22 @@ graph TD
     style GroundTruth fill:#f88,stroke:#333
 ```
 
----
-
 ### 2. Data Flow Architecture
 
 ```mermaid
 flowchart TD
     subgraph ESP32["ESP32-S3 Sensor Node"]
-        A1[AMG8833 Poll\n@10Hz] --> A2[Centroid Calculation]
+        A1[AMG8833 Poll\n@20Hz] --> A2[Centroid Calculation]
         A2 --> A3[Velocity Estimation]
         A3 --> A4{Fall Candidate?}
-        A4 -->|Yes| A5[Trigger MLX90640 Burst]
+        A4 -->|Yes| A5[Send Alert]
         A4 -->|No| A1
-        A5 --> A6[Stream 24 Frames\n@8Hz]
     end
     
     subgraph Transport["Transport Layer"]
-        A6 -->|USB Serial| B1[Binary Protocol]
-        A6 -->|UART| B2[USR-TCP232]
-        B2 -->|Ethernet| B3[ModBus/TCP]
+        A1 -->|USB Serial| B1[Binary Protocol]
+        A5 -->|USB Serial| B1
         B1 -->|Direct| C1[Jetson]
-        B3 -->|Network| C1
     end
     
     subgraph Jetson["Jetson Orin Nano"]
@@ -136,8 +133,6 @@ flowchart TD
         F2 --> D2
     end
 ```
-
----
 
 ### 3. Hardware Wiring Diagram (ESP32-S3 + AMG8833)
 
@@ -204,29 +199,34 @@ graph LR
 **I2C Address Configuration:**
 - AMG8833 #1: AD0 = HIGH → Address = **0x69**
 - AMG8833 #2: AD0 = LOW → Address = **0x68**
-- (If using MLX90640: Default address = **0x33**)
-
----
 
 ### 4. VLAN and Network Topology
 
 ```mermaid
-flowchart TB
+flowchart TD
     subgraph Internet["Internet"]
         ISP[ISP]
     end
     
     subgraph Firewall["Zyxel USG Flex 100H"]
         WAN[WAN Port]
-        LAN1[LAN Port 1\nVLAN 10]
-        LAN2[LAN Port 2\nVLAN 20]
-        LAN3[LAN Port 3\nVLAN 30]
+        LAN1[LAN Port 1\nTrunk to XMG108]
         LAN4[LAN Port 4\nVLAN 40]
+    end
+    
+    subgraph CoreSwitch["Zyxel XMG108\nCore Switch"]
+        TRUNK1[Port 1\nTrunk to FW]
+        MGMT[Port 2\nVLAN 10]
+        INF1[Port 3\nVLAN 20]
+        INF2[Port 4\nVLAN 20]
+        SENSOR1[Port 5\nTrunk to TP-Link #1]
+        SENSOR2[Port 6\nTrunk to TP-Link #2]
+        SENSOR3[Port 7\nTrunk to TP-Link #3]
+        AP_PORT[Port 8\nTrunk to AP]
     end
     
     subgraph VLAN10["VLAN 10: Management"]
         NUC[ASUS NUC]
-        SW_MGMT[Switch Mgmt Port]
     end
     
     subgraph VLAN20["VLAN 20: Inference"]
@@ -235,6 +235,9 @@ flowchart TB
     end
     
     subgraph VLAN30["VLAN 30: Sensors"]
+        TPLINK1[TP-Link #1]
+        TPLINK2[TP-Link #2]
+        TPLINK3[TP-Link #3]
         ESP1[ESP32-S3 #1]
         ESP2[ESP32-S3 #2]
         ESP3[ESP32-S3 #3]
@@ -243,23 +246,28 @@ flowchart TB
     end
     
     subgraph VLAN40["VLAN 40: Alert/Caregiver"]
-        AP[Zyxel AP]
+        AP[Zyxel NWA90BE]
         TABLET[Caregiver Tablet]
     end
     
     ISP --> WAN
-    WAN --> Firewall
+    WAN --> LAN1
+    LAN1 --> TRUNK1
     
-    Firewall -->|VLAN 10| SW_MGMT
-    Firewall -->|VLAN 20| JET_A
-    Firewall -->|VLAN 20| JET_B
-    Firewall -->|VLAN 30| ESP1
-    Firewall -->|VLAN 30| ESP2
-    Firewall -->|VLAN 30| USR1
-    Firewall -->|VLAN 30| USR2
-    Firewall -->|VLAN 40| AP
+    MGMT --> NUC
+    INF1 --> JET_A
+    INF2 --> JET_B
+    SENSOR1 --> TPLINK1
+    SENSOR2 --> TPLINK2
+    SENSOR3 --> TPLINK3
+    AP_PORT --> AP
     
-    SW_MGMT --> NUC
+    TPLINK1 --> ESP1
+    TPLINK1 --> USR1
+    TPLINK2 --> ESP2
+    TPLINK3 --> ESP3
+    TPLINK3 --> USR2
+    
     AP --> TABLET
     
     style VLAN10 fill:#ff8,stroke:#333
@@ -267,19 +275,6 @@ flowchart TB
     style VLAN30 fill:#f88,stroke:#333
     style VLAN40 fill:#88f,stroke:#333
 ```
-
-**Firewall Rules (USG Flex 100H):**
-| Source VLAN | Dest VLAN | Port | Protocol | Purpose |
-|-------------|-----------|------|----------|---------|
-| 30 | 20 | 115200 | TCP | ESP32 → Jetson Serial (via USR-TCP232) |
-| 30 | 20 | 502 | TCP | ModBus/TCP |
-| 20 | 10 | 1883 | TCP | MQTT (plain) |
-| 20 | 10 | 8883 | TCP | MQTT (TLS) |
-| 20 | 10 | 50051 | TCP | gRPC |
-| 40 | 10 | 443 | TCP | HTTPS Alerts |
-| 10 | 30 | Any | TCP | NUC → ESP32 OTA |
-
----
 
 ### 5. MQTT Topic Hierarchy
 
@@ -290,7 +285,6 @@ flowchart TD
     ROOT --> FW3[fw3/]
     ROOT --> FW4[fw4/]
     ROOT --> SYS[sys/]
-    ROOT --> FW35[fw35/]
     
     FW1 -->|device_id| FW1_DEV["{device_id}/"]
     FW1_DEV --> TELE[telemetry/]
@@ -311,11 +305,6 @@ flowchart TD
     SYS -->|device_id| SYS_DEV["{device_id}/"]
     SYS_DEV --> HB[heartbeat/]
     SYS_DEV --> CONFIG[config/]
-    
-    FW35 -->|location| FW35_LOC["{location}/"]
-    FW35_LOC --> SENSOR1[bed_pressure/]
-    FW35_LOC --> SENSOR2[door/]
-    FW35_LOC --> ENV[env/]
 ```
 
 ---
@@ -328,7 +317,7 @@ flowchart TD
 |--------|-------------|--------|------------|------|
 | Node 1 | ESP32-S3 | AMG8833 #1 (0x69) | USB to Jetson A | Primary Room A |
 | Node 2 | ESP32-S3 | AMG8833 #2 (0x68) | USB to Jetson A | Primary Room B |
-| Node 3 | ESP32-S3 | None (or MLX90640) | USB to Jetson B | Standby/Secondary |
+| Node 3 | ESP32-S3 | None | USB to Jetson B | Standby/Secondary |
 | Gateway | ESP32-S2-WROOM | None | UART to USR-TCP232 | Serial-to-Ethernet |
 
 **ESP32-S3 Pinout (Recommended):**
@@ -353,12 +342,14 @@ flowchart TD
 - FOV: ~60° horizontal, ~60° vertical
 - Coverage: ~3m × 3m at 2.5m height
 
+**Note:** Only 2 AMG8833 sensors are deployed. ESP32-S3 #3 is standby without a sensor.
+
 ---
 
 ## 📡 Communication Protocols
 
 ### 1. Direct USB Serial (Primary)
-- **Baud Rate:** 921600 (for MLX90640 burst) or 115200 (for AMG8833-only)
+- **Baud Rate:** 921600 (for high-speed) or 115200 (standard)
 - **Protocol:** Unified Binary Protocol (see PROTOCOL_SPECIFICATION.md)
 - **Connection:** ESP32 USB-CDC → Jetson USB-A
 - **Use Case:** High-speed, low-latency data transfer
@@ -408,7 +399,7 @@ flowchart TD
     
     G --> H[Perform Fall Scenarios]
     H --> I{Trigger Detected?}
-    I -->|Yes| J[Capture Burst]
+    I -->|Yes| J[Log Event]
     I -->|No| H
     J --> K[Stream to Jetson]
     K --> L[Log All Data]
@@ -426,7 +417,6 @@ flowchart TD
 flowchart TD
     subgraph RawData["Raw Data Sources"]
         A1[ESP32 AMG8833\nThermal Frames]
-        A2[ESP32 MLX90640\nHigh-Res Frames]
         A3[Body Cam\nIR Video]
         A4[Fixed IR\nCameras]
     end
@@ -445,7 +435,6 @@ flowchart TD
     end
     
     A1 --> B1
-    A2 --> B1
     A3 --> B2
     A4 --> B2
     B1 --> B3
@@ -463,7 +452,7 @@ flowchart TD
 ### Fall Detection Logic (Framework 1 - ESP32)
 
 ```
-Input: AMG8833 frame (64 pixels)
+Input: AMG8833 frame (64 pixels @ 20Hz)
        
 1. Compute Centroid:
    - Filter pixels > 27.5°C (human threshold)
@@ -487,22 +476,17 @@ Input: AMG8833 frame (64 pixels)
 ### Spatial Analysis (Framework 2 - Jetson)
 
 ```
-Input: MLX90640 burst (24 frames @ 8Hz)
+Input: AMG8833 frames (20Hz continuous)
 
 1. Temporal Analysis:
-   - Track centroid across all frames
+   - Track centroid across frames
    - Compute velocity profile
    - Detect acceleration peaks
    
-2. Shape Analysis:
-   - Compute bounding box
-   - Calculate aspect ratio
-   - Detect "crumpling" pattern (height reduction)
-   
-3. Confidence Scoring:
+2. Confidence Scoring:
    - Base confidence: 0.5
    - +0.1 per frame with fall candidate flag
-   - +0.05 per 0.1 m/s velocity above threshold
+   - +0.05 per 0.1 pixels/frame velocity above threshold
    - +0.1 if impact detected (sudden stop)
    - +0.1 if post-fall immobility detected
    
@@ -515,9 +499,9 @@ Input: MLX90640 burst (24 frames @ 8Hz)
 Input: Framework 2 output (confidence, features)
 
 Classification Rules:
-- IF confidence > 0.8 AND velocity_peak > 2.0 m/s:
+- IF confidence > 0.8 AND velocity_peak > 2.0 pixels/frame:
     → CLASSIFY as "FALL"
-- ELSE IF confidence > 0.6 AND velocity_peak > 1.5 m/s:
+- ELSE IF confidence > 0.6 AND velocity_peak > 1.5 pixels/frame:
     → CLASSIFY as "NEAR_FALL"
 - ELSE IF confidence > 0.4:
     → CLASSIFY as "SUSPICIOUS_ACTIVITY"
@@ -550,36 +534,9 @@ Provenance Logging:
 
 ---
 
-## 📦 Training & Evaluation Sets
+## 📦 Dataset Structure
 
-### Dataset Structure
-
-```
-heuristicmesh-dataset/
-├── README.md
-├── metadata.json
-├── training/
-│   ├── thermal/
-│   │   ├── roomA/
-│   │   │   ├── scenario_S01/
-│   │   │   │   ├── frame_00000.json
-│   │   │   │   ├── frame_00001.json
-│   │   │   │   └── ...
-│   │   │   └── scenario_S02/
-│   │   └── ...
-│   ├── features/
-│   │   ├── roomA_S01_features.csv
-│   │   └── ...
-│   └── labels/
-│       ├── roomA_S01_labels.csv
-│       └── ...
-├── validation/
-│   └── ... (same structure as training)
-└── test/
-    └── ... (same structure as training)
-```
-
-### Data Format Specifications
+### Dataset Format Specifications
 
 #### 1. Thermal Frame (JSON)
 ```json
@@ -602,26 +559,7 @@ heuristicmesh-dataset/
 }
 ```
 
-#### 2. MLX90640 Frame (JSON)
-```json
-{
-  "timestamp_us": 1723402533412000,
-  "device_id": "ESP32-S3-001",
-  "sensor_type": "MLX90640",
-  "frame_id": 12345,
-  "burst_id": 42,
-  "burst_index": 5,
-  "resolution": [32, 24],
-  "pixels": [22.1, 22.3, ..., 28.2],
-  "metadata": {
-    "max_temp": 28.2,
-    "min_temp": 21.8,
-    "avg_temp": 24.1
-  }
-}
-```
-
-#### 3. Feature Vector (CSV)
+#### 2. Feature Vector (CSV)
 ```csv
 frame_id,timestamp_us,device_id,scenario_id,centroid_x,centroid_y,velocity,acceleration,hot_pixel_count,mass,fall_candidate,label
 12345,1723402533412000,ESP32-S3-001,S01,3.2,2.8,1.85,2.1,5,45.2,1,FALL
@@ -629,7 +567,7 @@ frame_id,timestamp_us,device_id,scenario_id,centroid_x,centroid_y,velocity,accel
 ...
 ```
 
-#### 4. Label File (CSV)
+#### 3. Label File (CSV)
 ```csv
 frame_id,scenario_id,label,confidence,annotator,timestamp_annotation
 12345,S01,FALL,0.95,bodycam_sync,1723402533412000
@@ -658,7 +596,7 @@ frame_id,scenario_id,label,confidence,annotator,timestamp_annotation
 
 ---
 
-## 🔧 Configuration Files
+## 🎛️ Configuration Files
 
 ### 1. `config/device_config.yaml`
 ```yaml
@@ -689,48 +627,37 @@ devices:
     sensor: none
     connection: usb
     port: /dev/ttyACM2
-    baud: 115200
-    location: roomC
+    baud: 921600
+    location: standby
     role: standby
-    
-  ESP32-S2-001:
-    model: esp32-s2
-    sensor: none
-    connection: uart
-    port: /dev/ttyUSB0
-    baud: 115200
-    location: gateway
-    role: modbus
-    modbus:
-      ip: 192.168.30.10
-      port: 502
-      unit_id: 1
 ```
 
 ### 2. `config/sensor_thresholds.yaml`
 ```yaml
-# Sensor Thresholds (Tunable via baseline capture)
-thermal:
-  human_temp_c: 27.5        # Minimum temp for human detection
-  hot_pixel_min: 3          # Minimum hot pixels for valid detection
-  velocity_trigger: 1.8      # Velocity threshold (pixels/frame)
-  persistence_frames: 4     # Consecutive frames above threshold
-  
-  # Centroid-based thresholds
-  centroid_upper_half: 4.0  # y < 4.0 for fall candidate
-  centroid_downward_delta: 1.4  # Minimum downward movement
-  
-  # Confidence scoring
-  base_confidence: 0.5
-  velocity_weight: 0.05     # Per 0.1 m/s above threshold
-  persistence_weight: 0.1  # Per frame
-  impact_weight: 0.1        # If sudden stop detected
-  immobility_weight: 0.1   # If post-fall stillness
+# Thermal Detection Thresholds
+
+# Human detection
+human_temp_threshold: 27.5      # Minimum temp for human (degrees C)
+hot_pixel_min_count: 3         # Minimum hot pixels for valid detection
+
+# Centroid tracking
+centroid_history: 8           # Number of historical centroids to track
+centroid_upper_half: 4.0      # y < 4.0 for fall candidate (0-7 range)
+
+# Fall detection
+velocity_trigger: 1.8         # Velocity threshold (pixels/frame)
+persistence_frames: 4         # Consecutive frames above threshold
+centroid_downward_delta: 1.4  # Minimum downward movement
+
+# Confidence scoring (computed on Jetson)
+base_confidence: 0.5
+velocity_weight: 0.05         # Per 0.1 pixels/frame above threshold
+persistence_weight: 0.1      # Per frame
+impact_weight: 0.1            # If sudden stop detected
+immobility_weight: 0.1       # If post-fall stillness
 
 # Frame timing
-frame_interval_ms: 50      # AMG8833 poll interval (~20Hz)
-burst_frames: 24           # MLX90640 burst capture count
-burst_rate_hz: 8           # MLX90640 refresh rate during burst
+frame_interval_ms: 50        # AMG8833 poll interval (~20Hz)
 
 # Alert thresholds
 fall_confidence_threshold: 0.85  # Minimum confidence for alert
@@ -789,13 +716,13 @@ publications:
    - Connect I2C with 4.7kΩ pull-ups
 
 2. **Connect ESP32s:**
-   - ESP32-S3 #1 → Jetson A (USB)
-   - ESP32-S3 #2 → Jetson A (USB)
-   - ESP32-S3 #3 → Jetson B (USB)
-   - ESP32-S2 → USR-TCP232 #1 (UART)
+   - ESP32-S3 #1 → Jetson A (USB) - AMG8833 #1 (0x69)
+   - ESP32-S3 #2 → Jetson A (USB) - AMG8833 #2 (0x68)
+   - ESP32-S3 #3 → Jetson B (USB) - Standby
+   - ESP32-S2 → USR-TCP232 #1 (UART) - Gateway
 
 3. **Network Configuration:**
-   - Configure Zyxel switch with VLANs 10, 20, 30, 40
+   - Configure Zyxel XMG108 with VLANs 10, 20, 30, 40
    - Set up USG Flex 100H firewall rules
    - Assign static IPs to all devices
 
@@ -815,7 +742,7 @@ publications:
 3. **Start Jetson Ingest:**
    ```bash
    cd jetson
-   python3 hm_ingest.py --port /dev/ttyACM0 --baud 921600
+   python3 hm_ingest_amg_only.py --port /dev/ttyACM0 --baud 921600
    ```
 
 ### Step 3: Baseline Capture
@@ -834,7 +761,7 @@ publications:
 
 4. **Generate dataset:**
    ```bash
-   python3 generate_dataset.py --input bodycam_footage/ --output dataset/
+   python3 capture_session.py --input bodycam_footage/ --output dataset/
    ```
 
 ### Step 4: Tune Thresholds
@@ -856,7 +783,7 @@ publications:
 
 ---
 
-## 📞 Troubleshooting
+## 🛡️ Troubleshooting
 
 ### Common Issues
 
@@ -866,7 +793,6 @@ publications:
 | I2C scan fails | Wiring error | Check pull-ups, connections |
 | No fall detection | Thresholds too high | Lower `velocity_trigger` |
 | False positives | Thresholds too low | Increase `velocity_trigger` or `persistence_frames` |
-| MLX90640 not responding | Address conflict | Check AD0 pin, use 0x33 |
 | USR-TCP232 not connecting | IP/config issue | Verify USR-TCP232 settings |
 
 ### Debug Commands
@@ -893,16 +819,14 @@ tail -f /var/log/heuristicmesh/*.log
 
 ## 📚 References
 
-- [Gap Analysis](GAP_ANALYSIS.md)
 - [Protocol Specification](PROTOCOL_SPECIFICATION.md)
-- [Design Spec](HeuristicMesh_Design_Spec.md)
-- [Tech Spec](HeuristicMesh_Tech_Spec.md)
-- [Sensor Concentrator](HeuristicMesh_Sensor_Concentrator.md)
-- [Fall Simulation Protocol](HeuristicMesh_Fall_Simulation_Production_Package.md)
+- [Hardware Configuration](HARDWARE_CONFIGURATION.md)
+- [Network Security Architecture](NETWORK_SECURITY_ARCHITECTURE.md)
+- [Nebula Cloud Configuration](NEBULA_CONFIGURATION_GUIDE.md)
 
 ---
 
 **Document Status:** ✅ Active  
 **Owner:** Engineering Team  
 **Last Updated:** 2026-08-29  
-**Version:** 1.0
+**Version:** 1.1

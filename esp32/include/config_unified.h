@@ -5,8 +5,9 @@
  * All tunable parameters in one place
  * 
  * Author: HeuristicMesh Engineering Team
- * Version: 1.0
+ * Version: 1.1
  * Date: 2026-08-29
+ * Note: MLX90640 support removed - only 2x AMG8833 sensors in inventory
  */
 
 #pragma once
@@ -38,18 +39,17 @@
 // I2C Addresses
 #define AMG_I2C_ADDR_DEFAULT  0x69  // AD0 pulled HIGH
 #define AMG_I2C_ADDR_ALT     0x68  // AD0 pulled LOW
-#define MLX_I2C_ADDR_DEFAULT  0x33  // MLX90640 default address
 
 // Sensor capabilities
 #define HAS_AMG8833          true
-#define HAS_MLX90640         false  // Set to true if MLX90640 is connected
+#define HAS_MLX90640         false  // DISABLED - No MLX90640 in inventory
 
 // ============================================================================
 // SERIAL COMMUNICATION CONFIGURATION
 // ============================================================================
 
 // Baud rates
-#define USB_BAUD            921600  // For direct USB to Jetson (supports MLX burst)
+#define USB_BAUD            921600  // For direct USB to Jetson
 #define UART_BAUD           115200  // For USR-TCP232 connection
 #define DEBUG_BAUD          115200  // For debug output
 
@@ -74,8 +74,6 @@
 // Sensor type codes
 #define SENSOR_NONE         0x00
 #define SENSOR_AMG8833      0x01
-#define SENSOR_MLX90640     0x02
-#define SENSOR_DUAL         0x03
 
 // ============================================================================
 // TIMING CONFIGURATION
@@ -84,12 +82,6 @@
 // AMG8833 polling
 #define AMG_POLL_MS         50      // ~20Hz polling rate
 #define AMG_POLL_MIN_MS     10      // Minimum polling interval
-
-// MLX90640 configuration
-#define MLX_REFRESH_RATE_IDLE  MLX90640_1_HZ    // Standby mode
-#define MLX_REFRESH_RATE_BURST MLX90640_8_HZ    // Burst mode
-#define BURST_FRAMES          24      // Number of frames in burst
-#define BURST_DURATION_MS     3000    // Total burst duration (24 frames @ 8Hz)
 
 // Status and heartbeat
 #define STATUS_INTERVAL_MS   1000    // Heartbeat interval
@@ -114,7 +106,7 @@
 
 // Confidence scoring (computed on Jetson)
 #define BASE_CONFIDENCE        0.5f
-#define VELOCITY_WEIGHT        0.05f   // Per 0.1 m/s above threshold
+#define VELOCITY_WEIGHT        0.05f   // Per 0.1 pixels/frame above threshold
 #define PERSISTENCE_WEIGHT     0.1f    // Per frame
 #define IMPACT_WEIGHT          0.1f    // If sudden stop detected
 #define IMMOBILITY_WEIGHT      0.1f    // If post-fall stillness
@@ -154,14 +146,12 @@
 // ============================================================================
 
 // Message buffers
-#define MAX_MESSAGE_SIZE      3200    // Maximum message size (MLX frame + header)
+#define MAX_MESSAGE_SIZE      3200    // Maximum message size (AMG frame + header)
 #define RX_BUFFER_SIZE        1024    // Receive buffer size
 #define TX_BUFFER_SIZE        1024    // Transmit buffer size
 
 // Frame buffers
 #define AMG_FRAME_BUFFER_SIZE  64      // AMG8833 pixels
-#define MLX_FRAME_BUFFER_SIZE  768     // MLX90640 pixels
-#define BURST_BUFFER_SIZE      (BURST_FRAMES * MLX_FRAME_BUFFER_SIZE)  // Total burst buffer
 
 // ============================================================================
 // ERROR CODES
@@ -212,35 +202,7 @@
 #endif
 
 #if DEBUG_LEVEL >= DEBUG_VERBOSE
-    #define DEBUG_VERBOSE(x)   Serial.println(x)
+    #define DEBUG_VERBOSE(x)  Serial.println(x)
 #else
     #define DEBUG_VERBOSE(x)
 #endif
-
-// ============================================================================
-// NETWORK CONFIGURATION
-// ============================================================================
-
-// VLAN configuration
-#define VLAN_MANAGEMENT       10      // Management VLAN
-#define VLAN_INFERENCE        20      // Inference VLAN
-#define VLAN_SENSORS          30      // Sensors VLAN
-#define VLAN_ALERT            40      // Alert/Caregiver VLAN
-
-// IP configuration (if using static IPs)
-#define DEVICE_IP             "192.168.30.11"  // ESP32 on VLAN 30
-#define DEVICE_GATEWAY        "192.168.30.1"
-#define DEVICE_NETMASK        "255.255.255.0"
-
-// ============================================================================
-// OTA UPDATE CONFIGURATION (Future)
-// ============================================================================
-
-#define OTA_ENABLED           false   // Enable OTA updates
-#define OTA_SERVER_IP         "192.168.10.100"  // NUC IP
-#define OTA_PORT              8080    // OTA server port
-#define OTA_FIRMWARE_PATH     "/firmware/esp32-s3.bin"
-
-// ============================================================================
-// END OF FILE
-// ============================================================================

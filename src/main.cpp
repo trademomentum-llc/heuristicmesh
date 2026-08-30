@@ -1,31 +1,25 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_AMG88xx.h>
-#include <SparkFun_MLX90640.h>
 
 // --- Hardware Defines ---
 #define I2C_SDA 8
 #define I2C_SCL 9
-#define AMG_ADDR 0x69       // AD0 pin pulled HIGH
-#define MLX_ADDR 0x33
+#define AMG_ADDR_DEFAULT 0x69       // AD0 pin pulled HIGH
+#define AMG_ADDR_ALT     0x68       // AD0 pin pulled LOW
 
 // --- State Machine ---
-enum SystemState { IDLE, BURST_CAPTURE, STREAMING_OUT };
+enum SystemState { IDLE, STREAMING_OUT };
 SystemState state = IDLE;
 
 // --- Sensor Instances ---
 Adafruit_AMG88xx amg;
-MLX90640 mlx;
 
 // --- Buffers ---
 float amg_pixels[AMG88xx_PIXEL_ARRAY_SIZE];
-float mlx_frame[768];
-float burst_buffer[24][768];  // 24 frames @ 8Hz = 3 seconds
-uint8_t frame_count = 0;
-bool burst_ready = false;
 
 // --- Trigger Heuristics ---
-float prev_centroid_y = 2.0;   // Normalized 0-7
+float prev_centroid_y = 3.5;   // Center of 0-7 range
 unsigned long trigger_timer = 0;
 
 // --- I2C Scanning Helper (for boot diagnostics) ---
@@ -48,148 +42,85 @@ bool checkFallTrigger() {
     float weighted_y = 0;
     for (int i = 0; i < AMG88xx_PIXEL_ARRAY_SIZE; i++) {
         int row = i / 8;
-        if (amg_pixels[i] > 26.0) { // Only consider warm objects (human body)
+        int col = i % 8;
+        
+        if (amg_pixels[i] > 27.0f) {  // Human temperature threshold
             total_temp += amg_pixels[i];
             weighted_y += amg_pixels[i] * row;
         }
     }
-    if (total_temp == 0) return false;
-    float centroid_y = weighted_y / total_temp; // 0-7 range
     
-    // Velocity check: rapid downward movement (falling)
-    float delta_y = prev_centroid_y - centroid_y; // Positive = moving down
-    prev_centroid_y = centroid_y;
-
-    // Trigger threshold: Downward velocity > 1.5 rows per 100ms AND centroid in upper half
-    if (delta_y > 1.5 && centroid_y < 4.0) {
-        return true;
-    }
-    return false;
+    if (total_temp < 1.0f) return false;
+    
+    float cy = weighted_y / total_temp;
+    float dy = prev_centroid_y - cy;  // positive = downward
+    prev_centroid_y = cy;
+    
+    // Rapid downward motion while still in upper half of FOV
+    return (dy > 1.4f && cy < 4.0f);
 }
 
-// --- MLX90640 Burst Capture ---
-void startBurst() {
-    Serial.println("[BURST] Trigger accepted. Starting MLX capture...");
-    state = BURST_CAPTURE;
-    frame_count = 0;
-    burst_ready = false;
-    
-    // Set MLX to 8Hz Chessboard mode (interleaved)
-    mlx.setMode(MLX90640_CHESS);
-    mlx.setRefreshRate(MLX90640_8_HZ);
-    delay(100); // Settling time
-}
-
-void captureBurst() {
-    if (state != BURST_CAPTURE) return;
-    
-    if (mlx.isFrameReady() && frame_count < 24) {
-        // Capture the raw float data (already temperature compensated by library)
-        mlx.getFrame(mlx_frame);
-        
-        // Copy to burst buffer with timestamp offset
-        memcpy(burst_buffer[frame_count], mlx_frame, sizeof(float) * 768);
-        frame_count++;
-        
-        if (frame_count >= 24) {
-            burst_ready = true;
-            state = STREAMING_OUT;
-            // Return MLX to standby to save power
-            mlx.setRefreshRate(MLX90640_1_HZ);
-            mlx.setMode(MLX90640_CHESS);
-            Serial.println("[BURST] Capture complete. Ready to stream.");
-        }
-    }
-}
-
-// --- Binary Serial Protocol ---
-// Packet structure: 
-// HEADER (0xAA 0xBB) | FRAME_COUNT (uint8) | TIMESTAMP_US (uint64) | FRAME DATA (768 x float)
-void streamBurst() {
-    if (!burst_ready) return;
-    
-    // We'll stream frame-by-frame to avoid blocking the serial bus for too long.
-    static uint8_t stream_index = 0;
-    
-    if (stream_index < 24) {
-        // Send header + metadata
-        uint8_t header[2] = {0xAA, 0xBB};
-        Serial.write(header, 2);
-        Serial.write(stream_index);
-        
-        // Timestamp (ESP32 hardware tick, microseconds)
-        uint64_t ts = esp_timer_get_time();
-        Serial.write((uint8_t*)&ts, sizeof(ts));
-        
-        // Send the 768 floats (4 bytes each) directly in little-endian
-        Serial.write((uint8_t*)burst_buffer[stream_index], sizeof(float) * 768);
-        
-        stream_index++;
-    } else {
-        // All frames sent. Reset.
-        stream_index = 0;
-        burst_ready = false;
-        state = IDLE;
-        Serial.println("[BURST] Stream complete. Returning to IDLE.");
-    }
-}
-
-// --- Setup ---
 void setup() {
     Serial.begin(921600);
-    Wire.begin(I2C_SDA, I2C_SCL);
-    Wire.setClock(400000); // Fast mode for MLX
-
-    scanI2C();
-
-    // Init AMG8833
-    if (!amg.begin(AMG_ADDR)) {
-        Serial.println("[ERR] AMG8833 not found! Check wiring.");
-    } else {
-        Serial.println("[OK] AMG8833 initialized.");
-    }
-
-    // Init MLX90640
-    mlx.begin(MLX_ADDR, Wire);
-    mlx.setMode(MLX90640_CHESS);
-    mlx.setRefreshRate(MLX90640_1_HZ); // Standby until trigger
-    delay(50);
+    while (!Serial && millis() < 3000) delay(10);
     
-    // Get MLX EEPROM parameters (required for accurate math)
-    int paramError = mlx.getParameters();
-    if (paramError != 0) {
-        Serial.printf("[ERR] MLX90640 EEPROM read failed: %d\n", paramError);
-    } else {
-        Serial.println("[OK] MLX90640 initialized.");
-    }
+    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setClock(400000);  // Fast Mode
+    
+    Serial.println("[SYS] HeuristicMesh Sensor Node v1.1");
 
-    prev_centroid_y = 2.0; // Initial calibration assumption
-    Serial.println("[SYS] HeuristicMesh ESP32 Sensor Concentrator ready.");
+    
+    scanI2C();
+    
+    if (!amg.begin(AMG_ADDR_DEFAULT)) {
+        Serial.println("[ERR] AMG8833 not found at 0x69");
+        if (!amg.begin(AMG_ADDR_ALT)) {
+            Serial.println("[ERR] AMG8833 not found at 0x68");
+            while (1) delay(1000);
+        } else {
+            Serial.println("[OK] AMG8833 found at 0x68");
+        }
+    } else {
+        Serial.println("[OK] AMG8833 found at 0x69");
+    }
+    
+    state = IDLE;
+    Serial.println("[SYS] Ready - waiting for fall triggers");
 }
 
-// --- Main Loop ---
 void loop() {
-    switch (state) {
-        case IDLE:
-            // Poll AMG at ~10 Hz (non-blocking)
-            static unsigned long last_poll = 0;
-            if (millis() - last_poll > 100) {
-                last_poll = millis();
-                if (checkFallTrigger()) {
-                    startBurst();
-                }
-            }
-            break;
-
-        case BURST_CAPTURE:
-            captureBurst();
-            break;
-
-        case STREAMING_OUT:
-            streamBurst();
-            break;
+    static unsigned long last_poll = 0;
+    
+    // Poll AMG8833 at ~20Hz (50ms interval)
+    if (millis() - last_poll >= 50) {
+        last_poll = millis();
+        
+        if (checkFallTrigger()) {
+            state = STREAMING_OUT;
+            trigger_timer = millis();
+            Serial.println("[FALL] Trigger detected!");
+        }
     }
-
-    // Small yield to prevent watchdog
+    
+    // In streaming state, send frames continuously
+    if (state == STREAMING_OUT) {
+        // Send AMG frame data
+        // Format: 0xAA 0xBB | frame_type | timestamp | pixels...
+        const uint8_t hdr[2] = {0xAA, 0xBB};
+        uint8_t frame_type = 0x01;  // AMG frame
+        uint64_t ts = micros();
+        
+        Serial.write(hdr, 2);
+        Serial.write(frame_type);
+        Serial.write((uint8_t*)&ts, sizeof(ts));
+        Serial.write((uint8_t*)amg_pixels, sizeof(float) * AMG88xx_PIXEL_ARRAY_SIZE);
+        
+        // Return to idle (optional)
+        if (millis() - trigger_timer > 500) {
+            state = IDLE;
+            Serial.println("[FALL] Stream complete");
+        }
+    }
+    
     delay(1);
 }

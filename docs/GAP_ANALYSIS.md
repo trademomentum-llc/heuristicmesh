@@ -13,13 +13,13 @@ The current codebase has **three different ESP32 firmware variants** with **inco
 | Location | Protocol | Magic Byte | Packet Size | Payload | Status |
 |----------|----------|------------|-------------|---------|--------|
 | `esp32/src/main.cpp` | Binary v1 | `0xA5` | 19 bytes | AMG8833 centroid data | ✅ Used by `hm_ingest.py` |
-| `src/main.cpp` | Binary v2 | `0xAA 0xBB` | 3083 bytes | MLX90640 full frame (768 floats) | ❌ Used by `sneak-peak.py` |
-| `docs/HeuristicMesh_Sensor_Concentrator.md` | Binary v3 | `0xAA 0xBB` | 3083 bytes | MLX90640 burst (24 frames) | ❌ Not implemented in any receiver |
+| `src/main.cpp` | Binary v2 | `0xAA 0xBB` | 3083 bytes |  full frame (768 floats) | ❌ Used by `sneak-peak.py` |
+| `docs/HeuristicMesh_Sensor_Concentrator.md` | Binary v3 | `0xAA 0xBB` | 3083 bytes |   (24 frames) | ❌ Not implemented in any receiver |
 
 ### Issues
 - **No single protocol** works across all components
 - **Jetson ingest** (`hm_ingest.py`) only handles v1 (AMG8833-only)
-- **No MLX90640 support** in production ingest pipeline
+- **No  support** in production ingest pipeline
 - **No ModBus/TCP** (USR-TCP232) support anywhere
 - **No MQTT** on ESP32 (only mentioned in docs)
 
@@ -35,7 +35,7 @@ The current codebase has **three different ESP32 firmware variants** with **inco
 
 ### Current State: Two Incomplete Implementations
 
-| File | AMG8833 | MLX90640 | Protocol | I2C Error Handling | ModBus | MQTT |
+| File | AMG8833 |  | Protocol | I2C Error Handling | ModBus | MQTT |
 |------|---------|----------|----------|-------------------|--------|------|
 | `esp32/src/main.cpp` | ✅ Yes | ❌ No | `0xA5` (19B) | ❌ None | ❌ No | ❌ No |
 | `src/main.cpp` | ✅ Yes | ✅ Yes | `0xAA 0xBB` (3083B) | ❌ None | ❌ No | ❌ No |
@@ -92,20 +92,20 @@ But **no implementation exists** for:
 `jetson/hm_ingest.py`:
 - ✅ Handles binary protocol v1 (`0xA5`, 19 bytes)
 - ✅ Framework 2 spatial analysis (centroid-based)
-- ❌ No MLX90640 frame processing
+- ❌ No  frame processing
 - ❌ No ModBus/TCP support
 - ❌ No MQTT subscriber
 - ❌ No multi-sensor aggregation
 
 ### Issues
-- **Cannot process** MLX90640 high-res frames
+- **Cannot process**  high-res frames
 - **No ModBus/TCP** client to receive from USR-TCP232
 - **No MQTT** subscriber for sensor data
 - **No support** for multiple ESP32 devices
 
 ### Required Actions
 1. ✅ Update `hm_ingest.py` to handle **unified protocol**
-2. ✅ Add **MLX90640 frame processing**
+2. ✅ Add ** frame processing**
 3. ✅ Add **ModBus/TCP client** support
 4. ✅ Add **MQTT subscriber** option
 5. ✅ Add **multi-device aggregation**
@@ -163,7 +163,7 @@ But **no implementation exists** for:
 ## 📊 SUCCESS CRITERIA
 
 ### Phase 1 Complete When:
-- ✅ Single ESP32 firmware handles AMG8833 + MLX90640
+- ✅ Single ESP32 firmware handles AMG8833 + 
 - ✅ Single protocol works with all receivers
 - ✅ Jetson can ingest both sensor types
 - ✅ Architecture diagrams exist and are accurate
@@ -205,7 +205,7 @@ graph TD
 
 **Short-term (This Week):**
 4. Create architecture diagrams
-5. Test end-to-end with AMG8833 + MLX90640
+5. Test end-to-end with AMG8833 + 
 
 **Medium-term (Next Week):**
 6. Add ModBus/TCP integration

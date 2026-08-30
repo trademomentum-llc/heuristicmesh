@@ -16,7 +16,7 @@ Deliver a fully edge-deployed, explainable, auditable fall-detection and emergen
 - Success = sub-2-second end-to-end alert latency from confirmed fall, false-positive rate < 3 % after calibration, full audit trail of every decision layer, zero reliance on black-box proprietary models for the final classification decision.
 
 ### 3. Functional Requirements
-FR-1  Dual-thermal sensing: AMG8833 (8×8) continuous low-latency trigger + MLX90640 (32×24) high-resolution capture on trigger.  
+FR-1  Dual-thermal sensing: AMG8833 (8×8) continuous low-latency trigger +  (32×24) high-resolution capture on trigger.  
 FR-2  HeuristicMesh orchestration of four independent frameworks (Thermal Trigger, Spatial Analysis, Event Classification, Response).  
 FR-3  Real-time inference on Jetson Orin Nano (int8 quantized vision encoder + rule/heuristic engine).  
 FR-4  Configurable confidence threshold and multi-stage escalation (local notification → caregiver SMS/voice → EMS/911).  

@@ -28,7 +28,7 @@ The captured data will be used to:
 ### Hardware Setup
 ✅ **ESP32-S3 #1** with AMG8833 #1 (0x69) - Room A  
 ✅ **ESP32-S3 #2** with AMG8833 #2 (0x68) - Room B  
-✅ **ESP32-S3 #3** - Standby or MLX90640 (if available)  
+✅ **ESP32-S3 #3** - Standby or  (if available)  
 ✅ **ESP32-S2-WROOM** with USR-TCP232 - Gateway  
 ✅ **Jetson Orin Nano A** - Primary inference  
 ✅ **Jetson Orin Nano B** - Standby/validation  
@@ -342,7 +342,7 @@ For EACH scenario:
 - Fall candidate flags
 
 **ESP32 → Jetson (On Trigger):**
-- MLX90640 burst (24 frames @ 8Hz = 3 seconds)
+-   (24 frames @ 8Hz = 3 seconds)
 - Full 32×24 thermal array per frame
 - Timestamp per frame
 
@@ -367,7 +367,7 @@ For EACH scenario:
 ```
 Thermal frames:
   esp32_{device_id}/amg_frames/{frame_id:06d}.json
-  esp32_{device_id}/mlx_frames/{burst_id}_{frame_index:03d}.json
+  esp32_{device_id}/_frames/{_id}_{frame_index:03d}.json
 
 Body cam videos:
   bodycams/{camera_id}_{scenario_id}_{trial:03d}.avi
@@ -424,7 +424,7 @@ python3 scripts/generate_dataset.py \
    - Acceleration
    - Thermal mass
    - Hot pixel count
-   - Bounding box (for MLX)
+   - Bounding box (for )
    - Aspect ratio
    - Temperature statistics
 5. Save in standardized format
@@ -456,15 +456,15 @@ python3 scripts/generate_dataset.py \
 }
 ```
 
-**MLX90640 Features (per frame):**
+** Features (per frame):**
 ```json
 {
   "frame_id": 12345,
   "timestamp_us": 1723402533412000,
   "device_id": "esp32_001",
-  "sensor": "MLX90640",
-  "burst_id": 42,
-  "burst_index": 5,
+  "sensor": "",
+  "_id": 42,
+  "_index": 5,
   "features": {
     "centroid_x": 15.8,
     "centroid_y": 12.3,
@@ -640,8 +640,8 @@ pio run -t upload -e esp32-s3-devkitc-1  # For second device
 | Data Type | Per Session | After 3 Sessions |
 |-----------|-------------|------------------|
 | AMG Frames | ~12,000 | ~36,000 |
-| MLX Bursts | ~200 | ~600 |
-| MLX Frames | ~4,800 | ~14,400 |
+|  s | ~200 | ~600 |
+|  Frames | ~4,800 | ~14,400 |
 | Body Cam Video | ~20 GB | ~60 GB |
 | Event Logs | ~1 MB | ~3 MB |
 
@@ -677,7 +677,7 @@ pio run -t upload -e esp32-s3-devkitc-1  # For second device
 | I2C errors | Wiring issue | Check pull-ups, connections, addresses |
 | Low confidence scores | Thresholds too high | Decrease velocity_trigger, persistence_frames |
 | High false positives | Thresholds too low | Increase velocity_trigger, hot_pixel_min |
-| MLX90640 not responding | Address conflict | Check AD0 pin, use 0x33 or 0x34 |
+|  not responding | Address conflict | Check AD0 pin, use 0x33 or 0x34 |
 | USR-TCP232 not connecting | IP/config issue | Verify USR-TCP232 settings |
 | Body cam sync fails | Clock drift | Measure offset, use embedded timestamps |
 
