@@ -8,7 +8,7 @@
 - **Network**: Optional Zyxel (not required for field capture)
 
 ## Data Flow
-AMG8833 trigger → MLX90640 capture on shared I2C bus → Jetson inference → JSONL / MQTT → NUC / Hub
+AMG8833 trigger → Thermal Node (ESP32-S3 captures MLX90640 on the shared I2C bus) → Jetson inference → JSONL / MQTT → NUC / Hub
 
 ## Frameworks
 1. **Framework 1 – Thermal Trigger**: AMG8833 (8x8 = 64 px) provides the always-on low-power trigger path.
