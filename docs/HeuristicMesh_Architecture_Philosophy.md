@@ -1,7 +1,7 @@
 # HeuristicMesh Architecture Philosophy
-**Document Version:** 1.1
-**Date:** 2026-09-10
-**Source:** Owner conversation of 2026-08-11, merged into project canon
+**Document Version:** 1.1  
+**Date:** 2026-09-10  
+**Source:** Owner conversation of 2026-08-11, merged into project canon  
 **Status:** Canonical positioning. Does not replace `HeuristicMesh_Design_Spec.md`.
 
 ## 1. What HeuristicMesh Is (and Is Not)
@@ -49,7 +49,7 @@ Pipeline:
 3. Mesh layer - structured CV rules (rapid descent + horizontal position + immobility = fall confirmed).
 4. Alert output - EMS / 911 notification logic.
 
-Physical interconnection, VLANs, and failure modes live in `docs/HeuristicMesh_Design_Spec.md`.
+Physical interconnection, VLANs, and failure modes live in `HeuristicMesh_Design_Spec.md`.
 
 ## 4. Why This Architecture
 
@@ -84,4 +84,4 @@ Phased plan:
 - No framework may hide its decision rule inside an uninspectable model.
 - No environmental or contextual sensor (Framework 3.5) may fire an alert by itself. It may only modulate confidence.
 - Every alert must be reconstructible from local logs.
-- Human testing remains prohibited until `docs/Human_Testing_Safety_Gate.md` is explicitly cleared.
+- Human testing remains prohibited until `Human_Testing_Safety_Gate.md` is explicitly cleared.
