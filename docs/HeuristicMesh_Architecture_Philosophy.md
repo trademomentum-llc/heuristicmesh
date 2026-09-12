@@ -40,14 +40,14 @@ An LLM, at its core, is a heuristic engine over weighted patterns. HeuristicMesh
 | 1 | Thermal Trigger Heuristics | AMG8833 (8x8 = 64 px) | Is there a heat signature? Is it moving abnormally? |
 | 2 | Spatial Analysis Heuristics | MLX90640 (32x24 = 768 px) | What is the body's shape, orientation, and position in space? |
 | 3 | Event Classification Heuristics | Computer-vision rules | Rapid descent + horizontal posture + prolonged immobility = fall? |
-| 4 | Response Heuristics | Alert logic | Has the confidence threshold been met? Escalate to EMS / 911 / notification? |
+| 4 | Response Heuristics | Alert logic | Has the confidence threshold been met? Escalate to future production EMS / 911 / notification paths? |
 
 Pipeline:
 
 1. AMG8833 - real-time thermal trigger (heat + motion anomaly).
 2. MLX90640 - high-res thermal capture (body shape, posture, position).
 3. Mesh layer - structured CV rules (rapid descent + horizontal position + immobility = fall confirmed).
-4. Alert output - EMS / 911 notification logic.
+4. Alert output - future production EMS / 911 / notification logic.
 
 Physical interconnection, VLANs, and failure modes live in `HeuristicMesh_Design_Spec.md`.
 
@@ -84,4 +84,5 @@ Phased plan:
 - No framework may hide its decision rule inside an uninspectable model.
 - No environmental or contextual sensor (Framework 3.5) may fire an alert by itself. It may only modulate confidence.
 - Every alert must be reconstructible from local logs.
+- No emergency-services dispatch, clinical decision, or treatment recommendation may be based solely on prototype output.
 - Human testing remains prohibited until `Human_Testing_Safety_Gate.md` is explicitly cleared.
