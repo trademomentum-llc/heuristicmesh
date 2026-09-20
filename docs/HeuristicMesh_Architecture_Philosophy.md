@@ -1,8 +1,8 @@
 # HeuristicMesh Architecture Philosophy
-**Document Version:** 1.1  
-**Date:** 2026-09-10  
+**Document Version:** 1.2  
+**Date:** 2026-09-20  
 **Source:** Owner conversation of 2026-08-11, merged into project canon  
-**Status:** Canonical positioning. Does not replace `HeuristicMesh_Design_Spec.md`.
+**Status:** Canonical positioning. Does not replace `HeuristicMesh_Design_Spec.md`.  
 
 ## 1. What HeuristicMesh Is (and Is Not)
 
@@ -42,12 +42,13 @@ An LLM, at its core, is a heuristic engine over weighted patterns. HeuristicMesh
 | 3 | Event Classification Heuristics | Computer-vision rules | Rapid descent + horizontal posture + prolonged immobility = fall? |
 | 4 | Response Heuristics | Alert logic | Has the confidence threshold been met? Escalate to future production EMS / 911 / notification paths? |
 
-Pipeline:
+Pipeline (aligned with Design Spec: Frameworks 2/3 on Jetson before NUC mesh arbitration, then Framework 4):
 
-1. AMG8833 - real-time thermal trigger (heat + motion anomaly).
-2. MLX90640 - high-res thermal capture (body shape, posture, position).
-3. Mesh layer - structured CV rules (rapid descent + horizontal position + immobility = fall confirmed).
-4. Alert output - future production EMS / 911 / notification logic.
+1. Framework 1 (AMG8833) — real-time thermal trigger (heat + motion anomaly).
+2. Framework 2 (MLX90640) — spatial analysis on Jetson (body shape, posture, position).
+3. Framework 3 — Event Classification on Jetson: structured CV rules (rapid descent + horizontal posture + prolonged immobility = fall candidate).
+4. NUC Mesh — arbitrates confidence across frameworks and decides whether to escalate.
+5. Framework 4 — Response / Alert: future production EMS / 911 / notification logic.
 
 Physical interconnection, VLANs, and failure modes live in `HeuristicMesh_Design_Spec.md`.
 
