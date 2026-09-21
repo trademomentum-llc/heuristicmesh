@@ -45,7 +45,7 @@ Every claim below was checked against the repository at `main` on 2026-09-14:
 
 | Phase | Prior checkbox | Verified state | Met? |
 |-------|---------------|----------------|------|
-| 1 — Protocol unification | `[ ]` | Spec exists (`docs/PROTOCOL_SPECIFICATION.md`); unified firmware exists; unified ingest exists with AMG + MLX + ModBus + MQTT + multi-device classes. **End-to-end test with both sensors has not been run.** | ❌ Success criteria unmet |
+| 1 — Protocol unification | `[ ]` | Spec exists (`docs/PROTOCOL_SPECIFICATION.md`); unified firmware exists; unified ingest has AMG + MLX parsers and multi-device classes, while ModBus and MQTT integrations remain scaffolds. **End-to-end test with both sensors has not been run.** | ❌ Success criteria unmet |
 | 2 — ModBus/TCP integration | `[ ]` | Firmware send-path implemented (`sendModBusMessage`) but `MODBUS_ENABLED` defaults to `false`; Jetson `ModBusConnection` exists (pymodbus). **No `docs/MODBUS_INTEGRATION.md` / USR-TCP232 configuration guide. No end-to-end test.** | ❌ |
 | 3 — Baseline data capture | `[ ]` | `scripts/capture_session.py` and `scripts/generate_dataset.py` exist; `docs/BASELINE_CAPTURE_GUIDE.md` exists. The planned `scripts/capture_baseline.py` was never created under that name. **No baseline session has been executed; no validation scripts.** | ❌ |
 | 4 — Advanced features | `[ ]` | MQTT on ESP32: absent ("future" per firmware header). OTA: absent. Multi-sensor sync: partial. Self-healing: absent. | ❌ |
