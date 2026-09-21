@@ -61,7 +61,7 @@ Every claim below was checked against the repository at `main` on 2026-09-14:
 | A-F5 | 🟡 Medium | **CRC-16 defined but never used** — `sendMessage()` has the CRC append commented out, so messages have no integrity check despite the spec's validation steps. | `sendMessage()`, `calculateCRC16()` |
 | A-F6 | 🟢 Low | Stub fields: `acceleration` and heartbeat `error_count` are hard-coded `TODO`s; ModBus RX path only echoes bytes to debug. | `FallCandidatePayload`, `sendHeartbeat()`, ModBus RX block |
 | A-F7 | 🟡 Medium | **Config drift**: `config/thresholds.yaml` still declares `serial.magic: 0xA5` (legacy v1) and `baud: 115200`, while unified firmware speaks `0xAA 0x55` at 921600 over USB. | `config/thresholds.yaml` |
-| A-F8 | 🟢 Low | Legacy v1 (`0xA5`) decoding exists only on the Jetson side; firmware cannot fall back to legacy mode as the spec's migration path implies. | `esp32/src/main.cpp` vs. unified firmware |
+| A-F8 | 🟢 Low | Legacy v1 (`0xA5`) remains supported only by the Jetson receiver; the migration path intentionally keeps legacy devices on `hm_ingest.py` while new devices use the unified protocol. | `docs/PROTOCOL_SPECIFICATION.md` §Backward Compatibility |
 | A-F9 | 🟢 Low | `.DS_Store` committed under `esp32/`; needs `.gitignore` hygiene. | repo tree |
 
 ### A.3 Missing engineering artifacts
